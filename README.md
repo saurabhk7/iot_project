@@ -18,5 +18,4 @@ You can use [this](raspi-zero-w-GPIO-pin.png) image for reference.
 | RST  | 22    | GPIO25     |
 | 3.3V | 1     | 3V3        |
 
-## Usage
-Import the class by importing MFRC522 in the top of your script. For more info see the examples.
+
