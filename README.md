@@ -5,9 +5,7 @@ This code requires you to have SPI-Py installed from the following repository:
 https://github.com/lthiery/SPI-Py
 
 ## Pins
-You can use [this](http://i.imgur.com/y7Fnvhq.png) image for reference.
-![alt text](https://raw.githubusercontent.com/saurabhk7/iot_project/raspi-zero-w-GPIO-pin.png)
-
+You can use [this](raspi-zero-w-GPIO-pin.png) image for reference.
 
 | Name | Pin # | Pin name   |
 |------|-------|------------|
