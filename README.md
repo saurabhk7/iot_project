@@ -6,6 +6,8 @@ https://github.com/lthiery/SPI-Py
 
 ## Pins
 You can use [this](http://i.imgur.com/y7Fnvhq.png) image for reference.
+![alt text](https://raw.githubusercontent.com/saurabhk7/iot_project/raspi-zero-w-GPIO-pin.png)
+
 
 | Name | Pin # | Pin name   |
 |------|-------|------------|
