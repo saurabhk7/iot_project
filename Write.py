@@ -6,7 +6,11 @@ import MFRC522
 import signal
 
 continue_reading = True
-
+school_id = 0x69
+bus_id = 0x13
+standard = 0x05
+division = 0x02
+stud_roll_no = 0x07
 # Capture SIGINT for cleanup when the script is aborted
 def end_read(signal,frame):
     global continue_reading
@@ -53,11 +57,14 @@ while continue_reading:
         if status == MIFAREReader.MI_OK:
 
             # Variable for the data to write
-            data = []
+            data = [school_id, bus_id, standard, division, stud_roll_no, 0x00]
+	    #for i in range(0,5):
+	    #data.append(0x17)
+
 
             # Fill the data with 0xFF
             for x in range(0,16):
-                data.append(0xFF)
+                data.append(0x00)
 
             print "Sector 8 looked like this:"
             # Read block 8
@@ -76,17 +83,17 @@ while continue_reading:
 
             data = []
             # Fill the data with 0x00
-            for x in range(0,16):
-                data.append(0x00)
+            #for x in range(0,16):
+            #   data.append(0x00)
 
-            print "Now we fill it with 0x00:"
-            MIFAREReader.MFRC522_Write(8, data)
-            print "\n"
+            #print "Now we fill it with 0x00:"
+            #MIFAREReader.MFRC522_Write(8, data)
+            #print "\n"
 
-            print "It is now empty:"
+            #print "It is now empty:"
             # Check to see if it was written
-            MIFAREReader.MFRC522_Read(8)
-            print "\n"
+            #MIFAREReader.MFRC522_Read(8)
+            #print "\n"
 
             # Stop
             MIFAREReader.MFRC522_StopCrypto1()
