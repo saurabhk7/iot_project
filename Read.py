@@ -10,6 +10,7 @@ import time
 import datetime
 import threading
 import RPi.GPIO as GPIO
+import paho.mqtt.client as mqtt
 from Queue import Queue
 
 GPIO.setmode(GPIO.BOARD)
@@ -82,10 +83,10 @@ firebase_done = True
 def end_read(signal,frame):
     global continue_reading
     #global data_thread_event
+    GPIO.cleanup()
     print "Ctrl+C captured, ending read."
     continue_reading = False
-    #data_thread_event.set()
-    GPIO.cleanup()
+    
 def get_timestamp():
     return 222222222
 def init_firebase():
@@ -94,7 +95,7 @@ def init_firebase():
     
 def write_to_firebase(fire_obj, path, data):
     fire_obj.patch(path,data)
-    print "posted: "+str(data)+"at: "+str(path)
+    print str(data)+"at: "+str(path),"posted to firebase"
 def post_to_webhost(data_to_post):
     st=datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
     r = requests.post(url=webhost_db_dumpscript_url,data=data_to_post)
@@ -105,14 +106,25 @@ def post_to_webhost(data_to_post):
         
         return st
 def post_queue_to_webhost(event):
+    global webhost_done
+    global firebase_done
+    global data_queue
     print "Webhost Listening Queue for Data"
+    e = threading.Event()
+    t = threading.Thread(name='non-block', target=flashLed, args=(18,e, 2))
+    t.start()
     while not event.isSet():
         webhost_done = True
         while not data_queue.empty():
             webhost_done = False
-            e = threading.Event()
-            t = threading.Thread(name='non-block', target=flashLed, args=(18,e, 2))
-            t.start()
+            #if not t.is_alive():
+                #e = threading.Event()
+                #t = threading.Thread(name='flashLed', target=flashLed, args=(18,e, 2))
+                #t.start()
+                 
+            #e = threading.Event()
+            #t = threading.Thread(name='non-block', target=flashLed, args=(18,e, 2))
+            #t.start()
             top_data = data_queue.get()
             print "Data Arrived: ", str(top_data)
             server_timest = post_to_webhost(top_data)
@@ -125,7 +137,27 @@ def post_queue_to_webhost(event):
             data_queue.task_done()
             #e.set()
 
+
+# The callback for when the client receives a CONNACK response from the server.
+def on_connect(client, userdata, flags, rc):
+    print("Connected with result code "+str(rc))
+
+    # Subscribing in on_connect() means that if we lose the connection and
+    # reconnect then subscriptions will be renewed.
+    # client.subscribe("$SYS/#")
+
+    
+# The callback for when a PUBLISH message is received from the server.
+def on_message(client, userdata, msg):
+        print(msg.topic+" "+str(msg.payload))
+
+
+    
+
 def post_queue_to_firebase(event):
+    global webhost_done
+    global firebase_done
+    global fire_data_queue
     print "Firebase Listening Queue for Data"
     while not event.isSet():
         firebase_done = True
@@ -146,21 +178,97 @@ def post_queue_to_firebase(event):
             fire_data_queue.task_done()
             #e.set()
 
-    
+# initializing client and its attributes
+client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
+client.connect("iot.eclipse.org", 1883, 60)
+
+
+def post_queue_to_db(event):
+    print "DB Listening Queue for Data"
+    e = threading.Event()
+    t = threading.Thread(name='flashLed', target=flashLed, args=(18,e, 2))
+    t.start()
+    global webhost_done
+    global firebase_done
+    while not event.isSet():
+        webhost_done = True
+        firebase_done = True
+        #try:
+        if data_queue is not None:
+            while not data_queue.empty():
+
+                if not t.is_alive():
+                    e = threading.Event()
+                    t = threading.Thread(name='flashLed', target=flashLed, args=(18,e, 2))
+                    t.start()
+                           
+                
+                webhost_done = False
+                
+                top_data = data_queue.get()
+                #print "Data Arrived: ", str(top_data)
+                server_timest = post_to_webhost(top_data)
+                print str(top_data), "posted to webhost"
+                #if top_data['status']== 'OUT':
+                #server_time_data = {"time_out":str(top_data['local_timestamp'])}
+                #else:
+                #server_time_data = {"time_in":str(top_data['local_timestamp'])}
+                #write_to_firebase(firebase_root, student_path, server_time_data)
+                #data_queue.task_done()
+                #e.set()
+                firebase_done = False
+                #e2 = threading.Event()
+                #t2 = threading.Thread(name='non-block', target=flashLed, args=(18,e, 2))
+                #t2.start()
+                #top_data = fire_data_queue.get()
+                #print "Data Arrived: ", str(top_data)
+                #server_timest = post_to_webhost(top_data)
+                if top_data['status']== 'OUT':
+                    server_time_data = {"time_out":str(top_data['local_timestamp'])}
+                else:
+                    server_time_data = {"time_in":str(top_data['local_timestamp'])}
+                write_to_firebase(firebase_root, student_path, server_time_data)
+
+                #mqtt subscribe and publish
+                stud_id = top_data['student_id']
+                time_stamp = top_data['local_timestamp']
+                client.subscribe(stud_id)
+                client.publish(stud_id,time_stamp)
+                #client.loop_forever()
+                client.unsubscribe(stud_id)
+                
+                #print "posted to firebase"
+                data_queue.task_done()
+                print "-------------------------DONE---------------------------"
+        #else:
+            #print "***exception raised in post_queue_to_db()***"
+            
+            
 def flashLed(pin_no, e, t):
-    
-    while ((webhost_done == False) or (firebase_done == False)):
-        GPIO.output(pin_no, True)
-        time.sleep(0.05)
-        event_is_set = ((webhost_done == True) and (firebase_done == True))
-        if event_is_set:
-            GPIO.output(pin_no, False)
-            return
-            #print('stop led from flashing')
-        else:
-            GPIO.output(pin_no, False)
-            #print('leds off')
+    global webhost_done
+    global firebase_done
+    #pin_n = 18
+    #GPIO.setmode(GPIO.BOARD)
+    #print "flashing pin no: ", pin_n
+    #GPIO.setup(pin_n, GPIO.OUT)
+    while True:
+        global webhost_done
+        global firebase_done
+        while ((webhost_done == False) or (firebase_done == False)):
+            #print "processing .."
+            GPIO.output(pin_no, True)
             time.sleep(0.05)
+            event_is_set = ((webhost_done == True) and (firebase_done == True))
+            if event_is_set:
+                GPIO.output(pin_no, False)
+                return
+                #print('stop led from flashing')
+            else:
+                GPIO.output(pin_no, False)
+                #print('leds off')
+                time.sleep(0.05)
 
         
 # Hook the SIGINT
@@ -170,22 +278,27 @@ signal.signal(signal.SIGINT, end_read)
 MIFAREReader = MFRC522.MFRC522()
 
 # Welcome message
-print "Welcome,"
-print "Press Ctrl-C to stop."
+print "Welcome, ","Press Ctrl-C to stop."
 counter = 0
 firebase_root=init_firebase()
 
 
 
 data_thread_event = threading.Event()
-data_thread = threading.Thread(name='non-block', target=post_queue_to_webhost, args=(data_thread_event, ))
+data_thread = threading.Thread(name='post_webhost', target=post_queue_to_webhost, args=(data_thread_event, ))
 data_thread.setDaemon(True)
-data_thread.start()
+#data_thread.start()
 
 fire_data_thread_event = threading.Event()
-fire_data_thread = threading.Thread(name='non-block', target=post_queue_to_firebase, args=(fire_data_thread_event, ))
+fire_data_thread = threading.Thread(name='post_firebase', target=post_queue_to_firebase, args=(fire_data_thread_event, ))
 fire_data_thread.setDaemon(True)
-fire_data_thread.start()
+#fire_data_thread.start()
+
+db_data_thread_event = threading.Event()
+db_data_thread = threading.Thread(name='non-block', target=post_queue_to_db, args=(db_data_thread_event, ))
+db_data_thread.setDaemon(True)
+db_data_thread.start()
+
 
 with con:
     cur = con.cursor()
@@ -195,7 +308,8 @@ with con:
         busid_str = str(row[1])
         schoolid_str = str(row[0])
         print "School ID: ", schoolid_str, "Bus ID: ", busid_str           
-
+        client.subscribe(busid_str)
+        
 # This loop keeps checking for chips. If one is near it will get the UID and authenticate
 while continue_reading:
 
@@ -204,8 +318,8 @@ while continue_reading:
     (status,TagType) = MIFAREReader.MFRC522_Request(MIFAREReader.PICC_REQIDL)
 
     # If a card is found
-    if status == MIFAREReader.MI_OK:
-        print "Card detected"
+    #if status == MIFAREReader.MI_OK:
+        
         
     # Get the UID of the card
     (status,uid) = MIFAREReader.MFRC522_Anticoll()
@@ -215,7 +329,9 @@ while continue_reading:
 
         last_read_uid = uid
 
-        print "CARD UID: ",uid
+        
+        print "---CARD ",uid," DETECTED---"
+        #print "CARD UID: ",uid
 
         # Print UID
         #print "Current Card read UID: "+str(uid[0])+","+str(uid[1])+","+str(uid[2])+","+str(uid[3])
@@ -244,7 +360,7 @@ while continue_reading:
             #read_timestamp_in=MIFAREReader.MFRC522_Read(9)
             #read_timestamp_out=MIFAREReader.MFRC522_Read(10)
             
-	    print "data read: ",read_data
+	    #print "data read: ",read_data
 	    #print "-------------------------"
 	    #print "flag_bit: ",read_data[5]
 
@@ -267,7 +383,7 @@ while continue_reading:
                         'status':'IN',
                         'local_timestamp': str(st)
                     }
-                    print data
+                    #print data
                     data_queue.put(data)
                     fire_data_queue.put(data)
                     #timest = post_to_webhost(data)
@@ -283,13 +399,13 @@ while continue_reading:
                     
                     #MIFAREReader.MFRC522_Write(8, read_data)
                     data = {
-                        'bus_id':str(read_data[1]),
+                        'bus_id':str(busid_str),
                         'school_table':str("school_"+str(schoolid_str)),
                         'student_id':str(str(read_data[0])+str(read_data[2])+str(read_data[3])+str(read_data[4])),
                         'status':'OUT',
                         'local_timestamp':str(st)
                     }
-                    print data
+                    #print data
                     data_queue.put(data)
                     fire_data_queue.put(data)
                     #timest = post_to_webhost(data)
@@ -306,6 +422,7 @@ while continue_reading:
                     GPIO.output(18, True)
                     print "Select In/Out"
                     time.sleep(0.5)
+            #print "**num threads** ", threading.active_count()
             MIFAREReader.MFRC522_StopCrypto1()
             time.sleep(1)
             #e.set()
@@ -314,7 +431,7 @@ while continue_reading:
             GPIO.output(18, False)
             GPIO.output(13, True)
             time.sleep(0.5)
-       	    print "-----------DONE---------------"
+       	    print "---SCAN COMPLETE---"
         else:
             #e.set()
             GPIO.output(11, False)
